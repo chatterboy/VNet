@@ -5,8 +5,8 @@ def diceCoef(logit, label):
     label = tf.reshape(label, [-1, 2])
     a = 2 * tf.reduce_sum(tf.multiply(logit, label))
     b = tf.reduce_sum(tf.square(logit) + tf.square(label))
-    return
+    return tf.reduce_mean(tf.div(a, b))
 
 def diceLoss(logit, label):
-        with tf.variable_scope('dice_loss'):
-            return 1 - diceCoef(logit, label)
+    with tf.variable_scope('dice_loss'):
+        return 1 - diceCoef(logit, label)
