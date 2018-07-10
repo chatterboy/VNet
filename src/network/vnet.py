@@ -65,6 +65,7 @@ class VNet:
         trainer = tf.train.MomentumOptimizer(learning_rate=self.config['learning_rate'],
                                              momentum=self.config['momentum']).minimize(loss)
 
+        bestLoss = None
         saver = tf.train.Saver()
 
         print('start to train VNet...')
@@ -82,10 +83,11 @@ class VNet:
                 if epoch % self.config['epoch_step'] == 0:
                     print('epoch: {}, cost: {}'.format(epoch, cost))
 
-                if epoch % self.config['chks_step'] == 0:
+                if bestLoss is None or bestLoss > loss:
                     saver.save(sess, os.path.join(self.config['base_path'],
                                                   self.config['chks_path'], 'vnet'),
                                global_step=epoch)
+                    bestLoss = loss
 
     def test(self):
         return
