@@ -5,8 +5,8 @@ from src.network.vnet import VNet
 
 config = dict()
 
-# This can be done by a user want to use VNet
-config['epochs'] = 10000
+# This can be done by a user want to use VNetx
+config['epochs'] = 10
 config['batch_size'] = 2
 config['learning_rate'] = 0.0001
 config['momentum'] = 0.99

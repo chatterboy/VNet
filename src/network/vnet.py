@@ -65,29 +65,41 @@ class VNet:
         trainer = tf.train.MomentumOptimizer(learning_rate=self.config['learning_rate'],
                                              momentum=self.config['momentum']).minimize(loss)
 
-        bestLoss = None
+        bestCost = None
         saver = tf.train.Saver()
 
         print('start to train VNet...')
         with tf.Session() as sess:
             tf.global_variables_initializer().run()
 
-            saver.save(sess, os.path.join(self.config['base_path'],
-                                          self.config['chks_path'], 'vnet'))
-
             for epoch in range(1, self.config['epochs'] + 1):
                 batch_x, batch_y = batch.nextTo()
 
+                # cost: numpy.float32
                 cost, _ = sess.run([loss, trainer], feed_dict={x: batch_x,
                                                                y: batch_y})
+
                 if epoch % self.config['epoch_step'] == 0:
                     print('epoch: {}, cost: {}'.format(epoch, cost))
 
-                if bestLoss is None or bestLoss > loss:
+                if bestCost is None or bestCost > cost:
                     saver.save(sess, os.path.join(self.config['base_path'],
-                                                  self.config['chks_path'], 'vnet'),
-                               global_step=epoch)
-                    bestLoss = loss
+                                                  self.config['chks_path'], 'vnet'))
+                    bestCost = cost
+
+    def retrain(self):
+        # checkpoint 경로 생성
+        chksPath = os.path.join(self.config['base_path'], self.config['chks_path'])
+        # chekcpoint 디렉토리 확인
+        assert os.path.exists(chksPath), 'There is no such a checkpoint directory.'
+        # checkpoint 디렉토리 내 필요한 파일들이 있는지 확인
+        # 어떤 파일들이 있어야 하는가?
+
+        # 모델 및 학습된 가중치 로드
+
+        # 학습
+
+        return
 
     def test(self):
         return
