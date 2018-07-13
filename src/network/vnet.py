@@ -60,13 +60,17 @@ class VNet:
                                               self.width,
                                               self.nclass], name='y')
 
+        saver = tf.train.Saver()
+
         logit = self.vnet(x)
+
         loss = diceLoss(logit, y)
+
         trainer = tf.train.MomentumOptimizer(learning_rate=self.config['learning_rate'],
                                              momentum=self.config['momentum']).minimize(loss)
+        tf.add_to_collection("trainer", trainer)
 
         bestCost = None
-        saver = tf.train.Saver()
 
         print('start to train VNet...')
         with tf.Session() as sess:
@@ -79,8 +83,7 @@ class VNet:
                 cost, _ = sess.run([loss, trainer], feed_dict={x: batch_x,
                                                                y: batch_y})
 
-                if epoch % self.config['epoch_step'] == 0:
-                    print('epoch: {}, cost: {}'.format(epoch, cost))
+                print('epoch: {}, cost: {}'.format(epoch, cost))
 
                 if bestCost is None or bestCost > cost:
                     saver.save(sess, os.path.join(self.config['base_path'],
@@ -92,14 +95,38 @@ class VNet:
         chksPath = os.path.join(self.config['base_path'], self.config['chks_path'])
         # chekcpoint 디렉토리 확인
         assert os.path.exists(chksPath), 'There is no such a checkpoint directory.'
-        # checkpoint 디렉토리 내 필요한 파일들이 있는지 확인
-        # 어떤 파일들이 있어야 하는가?
 
-        # 모델 및 학습된 가중치 로드
+        print('lodaing train dataset...')
+        self.loadTrain()
 
-        # 학습
+        batch = Batch(self.images, self.labels, batch_size=2)
 
-        return
+        with tf.Session() as sess:
+            # 모델 및 학습된 가중치 로드
+            saver = tf.train.import_meta_graph(os.path.join(chksPath, 'vnet.meta'))
+            saver.restore(sess, tf.train.latest_checkpoint(chksPath))
+            graph = tf.get_default_graph()
+
+            for op in tf.get_default_graph().get_operations():
+                print(op.name)
+
+            # 학습
+            x = graph.get_tensor_by_name('x:0')
+            y = graph.get_tensor_by_name('y:0')
+
+            logit = graph.get_tensor_by_name('VNet/logits/add:0')
+            loss = diceLoss(logit, y)
+            trainer = tf.train.MomentumOptimizer(learning_rate=self.config['learning_rate'],
+                                                 momentum=self.config['momentum']).minimize(loss)
+
+            for epoch in range(1, self.config['epochs'] + 1):
+                batch_x, batch_y = batch.nextTo()
+
+                cost, _ = sess.run([loss, trainer], feed_dict={x: batch_x,
+                                                               y: batch_y})
+
+                if epoch % self.config['epoch_step'] == 0:
+                    print('epoch: {}, cost: {}'.format(epoch, cost))
 
     def test(self):
         return
