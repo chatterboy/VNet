@@ -15,7 +15,7 @@ config['base_path'] = os.path.abspath('..')
 config['train_path'] = 'data/train'
 config['test_path'] = 'data/test'
 config['chks_path'] = 'checkpoint'
-config['flag'] = 'train' # train, retrain, test
+config['flag'] = 'retrain' # train, retrain, test
 
 if config['flag'] == 'train':
     chksPath = os.path.join(config['base_path'], 'checkpoint')

@@ -60,8 +60,6 @@ class VNet:
                                               self.width,
                                               self.nclass], name='y')
 
-        saver = tf.train.Saver()
-
         logit = self.vnet(x)
 
         loss = diceLoss(logit, y)
@@ -70,6 +68,7 @@ class VNet:
                                              momentum=self.config['momentum']).minimize(loss)
         tf.add_to_collection("trainer", trainer)
 
+        saver = tf.train.Saver() # logit 위에 두면 variables 없다고 에러 뜸
         bestCost = None
 
         print('start to train VNet...')
@@ -125,8 +124,8 @@ class VNet:
                 cost, _ = sess.run([loss, trainer], feed_dict={x: batch_x,
                                                                y: batch_y})
 
-                if epoch % self.config['epoch_step'] == 0:
-                    print('epoch: {}, cost: {}'.format(epoch, cost))
+
+                print('epoch: {}, cost: {}'.format(epoch, cost))
 
     def test(self):
         return
