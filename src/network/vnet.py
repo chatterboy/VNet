@@ -382,7 +382,7 @@ class VNet:
             # TODO: score 레이어에서 마지막에 activation을 적용하는가? 우선은 적용함 (논문에서도 그래서)
             # logits
             #       return : 5-D Tensor, [batch size, 64, 128, 128, 2]
-            logits = conv3d('logits', r9, 2, 1)
+            logits = conv3d('logits', r9, 2, 1, relu=tf.nn.relu)
             print('logit: {}'.format(logits.get_shape()))
 
             return logits
