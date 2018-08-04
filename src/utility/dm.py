@@ -2,15 +2,6 @@ import os
 import numpy as np
 import SimpleITK as sitk
 
-"""
-    0 1 2 3 4
-    ->
-    3 0 4 1 2
-
-    1. [0 1] [2 3]
-    2. [3 0] [4 1]
-"""
-
 class Batch:
     def __init__(self, x, y, batch_size=1):
         self.x = x
@@ -96,69 +87,65 @@ class DataManager:
         self.load_labels()
 
     def getNumpyData(self, dat):
-        ret = dict()
-        for key in dat:
-            ret[key] = np.zeros([128, 128, 64], dtype=np.float32)
+        def _get_numpy_data(sitk_data):
+            rescaler = sitk.RescaleIntensityImageFilter()
 
-            img = dat[key]
+            rescaler.SetOutputMinimum(0)
+            rescaler.SetOutputMaximum(1)
 
-            rescalFilt = sitk.RescaleIntensityImageFilter()
-            rescalFilt.SetOutputMaximum(1)
-            rescalFilt.SetOutputMinimum(0)
+            rescaled_gt = rescaler.Execute(sitk_data)
 
-            imgRescaled = rescalFilt.Execute(img)
-
-            # we rotate the image according to its transformation using the direction and according to the final spacing we want
-            factor = np.asarray(img.GetSpacing()) / [1.0, 1.0, 1.5]
-
-            factorSize = np.asarray(img.GetSize() * factor, dtype=float)
-
-            newSize = np.max([factorSize, [128, 128, 64]], axis=0).astype(dtype=np.uint32).tolist()
+            new_size = [max(y[0], y[1]) for y in zip([int(x[0] * x[1] / x[2]) for x in zip(sitk_data.GetSize(), sitk_data.GetSpacing(), [1.0, 1.0, 1.5])], [128, 128, 64])]
 
             T = sitk.AffineTransform(3)
-            T.SetMatrix(img.GetDirection())
+            T.SetMatrix(sitk_data.GetDirection())
 
             resampler = sitk.ResampleImageFilter()
-            resampler.SetReferenceImage(imgRescaled)
+
+            """
+                There are two behaviors that make me confuse
+                First, when i code like resampler.SetReferenceImage(...) to resampler.SetSize(...) then this work well
+                Second, but when i code like resampler.SetSize(...) to resampler.SetReferenceImage(...) then this is occurred an error:
+                        RuntimeError: ... Requested region is (at least partially) outside the largest possible region
+                Anyway, i think the error is in the settings for resampler 
+            """
+            resampler.SetReferenceImage(rescaled_gt)
+            resampler.SetSize(new_size)
             resampler.SetOutputSpacing([1.0, 1.0, 1.5])
-            resampler.SetSize(newSize)
             resampler.SetInterpolator(sitk.sitkLinear)
 
-            imgResampled = resampler.Execute(imgRescaled)
+            resampled_gt = resampler.Execute(rescaled_gt)
 
-            imgCentroid = np.asarray(newSize, dtype=np.float32) / 2.0
+            centroid = [x[0] / x[1] for x in zip(new_size, 3 * [2.0])]
 
-            imgStartPx = (imgCentroid - np.asarray([128, 128, 64], dtype=np.float32) / 2.0).astype(dtype=np.int32).tolist()
+            start_px = [int(x[0] - x[1] / x[2]) for x in zip(centroid, [128, 128, 64], 3 * [2.0])]
 
-            regionExtractor = sitk.RegionOfInterestImageFilter()
-            regionExtractor.SetSize([128, 128, 64])
-            regionExtractor.SetIndex(imgStartPx)
+            region_extractor = sitk.RegionOfInterestImageFilter()
 
-            imgResampledCropped = regionExtractor.Execute(imgResampled)
+            region_extractor.SetSize([128, 128, 64])
+            region_extractor.SetIndex(start_px)
 
-#            ret[key] = np.transpose(sitk.GetArrayFromImage(imgResampledCropped).astype(dtype=np.float32), [2, 1, 0])
-            ret[key] = sitk.GetArrayFromImage(imgResampledCropped).astype(dtype=np.float32)
+            cropped_gt = region_extractor.Execute(resampled_gt)
 
+            return sitk.GetArrayFromImage(cropped_gt)
+
+        ret = dict()
+        for key in dat:
+            ret[key] = _get_numpy_data(dat[key])
         return ret
 
+
+    def get_sitk_images(self):
+        return [v for v in self.file_dict.values()]
+
+    def get_sitk_labels(self):
+        return [v for v in self.gt_dict.values()]
 
     def get_numpy_images(self):
-        """
-
-        :return:
-        """
-        dat = self.getNumpyData(self.file_dict)
-#        ret = np.fromiter(dat.values(), dtype=dtype)
-        ret = [dat[key] for key in dat]
-        return ret
+        data = self.getNumpyData(self.file_dict)
+        return np.array([v for v in data.values()], dtype=np.float32)
 
 
     def get_numpy_labels(self):
-        """
-
-        :return:
-        """
-        dat = self.getNumpyData(self.gt_dict)
-#        ret = np.fromiter(dat.values(), dtype=np.float32)
-        ret = [dat[key] for key in dat]
-        return ret
+        data = self.getNumpyData(self.gt_dict)
+        return np.array([v for v in data.values()], dtype=np.float32)

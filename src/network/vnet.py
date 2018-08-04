@@ -4,7 +4,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 
 from src.utility.dm import Batch, DataManager
-from src.utility.loss import diceLoss
+from src.utility.loss import dice_loss
 from src.utility.layer import conv3d, deconv3d, set_bsz
 
 class VNet:
@@ -17,22 +17,24 @@ class VNet:
 
         set_bsz(self.config['batch_size'])
 
+    """
+        Need to change images in ont-hot and it takes some times to process
+        We can do this using multi-threading to speed-up
+    """
     def toOneHot(self, labels):
-        # TODO: Need to extend generally
         shape = labels.shape
-        ret = np.zeros((shape[0], shape[1], shape[2], shape[3], 2), dtype=np.int32)
+        ret = np.zeros((shape[0], shape[1], shape[2], shape[3], 2), dtype=np.float32)
         print('start to transform labels in one-hot type...')
         for b in range(shape[0]):
-            for i in range(shape[1]):
-                for j in range(shape[2]):
-                    for k in range(shape[3]):
-                        if labels[b, i, j, k] > 0.5:
-                            ret[b, i, j, k, 1] = 1
-                            ret[b, i, j, k, 0] = 0
+            for d in range(shape[1]):
+                for h in range(shape[2]):
+                    for w in range(shape[3]):
+                        if labels[b, d, h, w] < 0.5:
+                            ret[b, d, h, w, 1] = 0
+                            ret[b, d, h, w, 0] = 1
                         else:
-                            ret[b, i, j, k, 1] = 0
-                            ret[b, i, j, k, 0] = 1
-            print('label {} is done...'.format(b))
+                            ret[b, d, h, w, 1] = 1
+                            ret[b, d, h, w, 0] = 0
         return ret
 
     def loadTrain(self):
@@ -60,10 +62,39 @@ class VNet:
             rows = depth / cols + 1
             for i in range(1, depth + 1):
                 fig.add_subplot(rows, cols, i)
-                plt.imshow(npImg[0, i - 1, :, :, 1], cmap='gray')
+                plt.imshow(npImg[0, i - 1, :, :, 1], cmap='gray', vmin=0, vmax=1)
             plt.show()
         _show(logits)
         _show(batch_y)
+
+    def save(self, logits, batch_x, batch_y, config, epoch):
+        def _save(name, epoch, config, npImg):
+            _, depth, height, width, _ = npImg.shape
+            for i in range(2):
+                fig = plt.figure(figsize=(30, 30))
+                cols = 8
+                rows = depth / cols + 1
+                for j in range(1, depth + 1):
+                    fig.add_subplot(rows, cols, j)
+                    if name == 'gt':
+                        plt.imshow(npImg[0, j - 1, :, :, i], cmap='gray', vmin=0, vmax=1)
+                    else:
+                        plt.imshow(npImg[0, j - 1, :, :, i], cmap='gray')
+                plt.savefig(os.path.join(config['base_path'], 'result',
+                                         ''.join([s for s in [str(epoch), '-', ['bg', 'fg'][i], '-', name, '.png']])))
+        def _save_tr(name, epoch, config, npImg):
+            _, depth, height, width, _ = npImg.shape
+            fig = plt.figure(figsize=(30, 30))
+            cols = 8
+            rows = depth / cols + 1
+            for i in range(1, depth + 1):
+                fig.add_subplot(rows, cols, i)
+                plt.imshow(npImg[0, i - 1, :, :, 0], cmap='gray', vmin=0, vmax=1)
+            plt.savefig(os.path.join(config['base_path'], 'result',
+                                     ''.join([s for s in [str(epoch), '-', name, '.png']])))
+        _save_tr('tr', epoch, config, batch_x)
+        _save('img', epoch, config, logits)
+        _save('gt', epoch, config, batch_y)
 
     def train(self):
         batch = self.getBatch(self.config['batch_size'])
@@ -75,13 +106,15 @@ class VNet:
             self.config['batch_size'],
             self.depth, self.height, self.width,
             self.nclass], name='y')
+        #
         logits_op = self.vnet(x)
-        loss_op = diceLoss(logits_op, y)
+        loss_op = dice_loss(logits_op, y)
         trainer_op = tf.train.MomentumOptimizer(learning_rate=self.config['learning_rate'],
                                              momentum=self.config['momentum']).minimize(loss_op)
         tf.add_to_collection("trainer", trainer_op)
         saver = tf.train.Saver() # logit 위에 두면 variables 없다고 에러 뜸
         bestLoss = None
+        #
         with tf.Session() as sess:
             tf.global_variables_initializer().run()
             for epoch in range(1, self.config['epochs'] + 1):
@@ -102,7 +135,7 @@ class VNet:
                     logits, loss = sess.run([logits_op, loss_op],
                                             feed_dict={x: batch_x, y: batch_y})
                     print('validation: {}'.format(loss))
-                    self.show(logits, batch_y)
+                    self.save(logits, batch_x, batch_y, self.config, str(epoch))
 
     def retrain(self):
         # checkpoint 경로 생성
@@ -129,7 +162,7 @@ class VNet:
             y = graph.get_tensor_by_name('y:0')
 
             logit = graph.get_tensor_by_name('VNet/logits/add:0')
-            loss = diceLoss(logit, y)
+            loss = dice_loss(logit, y)
             trainer = tf.train.MomentumOptimizer(learning_rate=self.config['learning_rate'],
                                                  momentum=self.config['momentum']).minimize(loss)
 
@@ -349,7 +382,7 @@ class VNet:
             # TODO: score 레이어에서 마지막에 activation을 적용하는가? 우선은 적용함 (논문에서도 그래서)
             # logits
             #       return : 5-D Tensor, [batch size, 64, 128, 128, 2]
-            logit = conv3d('logits', r9, 2, 1)
-            print('logit: {}'.format(logit.get_shape()))
+            logits = conv3d('logits', r9, 2, 1)
+            print('logit: {}'.format(logits.get_shape()))
 
-            return logit
+            return logits

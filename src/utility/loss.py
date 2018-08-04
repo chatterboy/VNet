@@ -1,12 +1,16 @@
 import tensorflow as tf
 
-def diceCoef(logit, label):
-    logit = tf.reshape(logit, [-1, 2])
-    label = tf.reshape(label, [-1, 2])
-    a = 2 * tf.reduce_sum(tf.multiply(logit, label))
-    b = tf.reduce_sum(tf.square(logit) + tf.square(label))
-    return tf.reduce_mean(tf.div(a, b))
+def dice_coef(logits, labels):
+    logits = tf.reshape(logits, [-1, 2])
+    labels = tf.reshape(labels, [-1, 2])
+    numerator = 2 * tf.reduce_sum(logits * labels)
+    denominator = tf.reduce_sum(tf.square(logits) + tf.square(labels))
+    epsilon = 0.00001
+    dice_coef = numerator / (denominator + epsilon)
+    return dice_coef
 
-def diceLoss(logit, label):
+# https://github.com/Mazecreator/tensorflow-hints/tree/master/maximize
+# https://stackoverflow.com/questions/38235648/is-there-an-easy-way-to-implement-a-optimizer-maximize-function-in-tensorflow
+def dice_loss(logits, labels):
     with tf.variable_scope('dice_loss'):
-        return 1 - diceCoef(logit, label)
+        return 1 - dice_coef(logits, labels)
