@@ -31,121 +31,70 @@ class DataManager:
         """
         self.config = config
 
-    def get_file_list(self):
+    def read_image_files(self, path):
         """
+        :param path: string, the path of the directory includes image files
+        :return self.image_files: list of string, a list of image files (names)
+        """
+        self.image_files = [f for f in os.listdir(path) if 'raw' not in f and 'segmentation' not in f]
+        return self.image_files
 
+    def read_label_files(self, path):
+        """
+        :param path: string, the path of the directory includes image files
+        :return self.label_files: list of string, a list of label files (names)
+        """
+        self.label_files = []
+        for name, ext in [os.path.splitext(f) for f in self.read_image_files(path)]:
+            self.label_files.append(''.join([name, '_segmentation', ext]))
+        return self.label_files
+
+    def read_sitk_image(self, path, dtype=sitk.sitkFloat32):
+        """
+        :param path:
+        :param dtype:
         :return:
         """
-        path = os.path.join(self.config['base_path'], self.config['train_path'])
-        self.file_list = \
-            [f for f in os.listdir(path) if 'raw' not in f and 'segmentation' not in f]
-        print(self.file_list)
+        return sitk.Cast(sitk.ReadImage(path), dtype)
 
-    def get_gt_list(self):
+    def read_sitk_images(self, path, files, dtype=sitk.sitkFloat32):
         """
+        :param path: string, the path of the driectory to read the image files
+        :param files: list of string, a list of image files (names)
+        :param dtype:
+        :return self.sitk_images: list of sitk_images
+        """
+        self.sitk_images = [self.read_sitk_image(os.path.join(path, f), dtype) for f in files]
+        return self.sitk_images
 
+    def read_sitk_labels(self, path, files, dtype=sitk.sitkFloat32):
+        """
+        :param path:
+        :param files:
+        :param dtype:
         :return:
         """
-        self.gt_list = []
-        for f in self.file_list:
-            name, ext = os.path.splitext(f)
-            self.gt_list.append(name + '_segmentation' + ext)
-        print(self.gt_list)
+        self.sitk_labels = [self.read_sitk_image(os.path.join(path, f), dtype) for f in files]
+        return self.sitk_labels
 
-    def load_images(self):
+    def load_train_data(self):
         """
-
+            Load train data from the path specified, the data consists of images and ground-truth to train a model
         :return:
         """
-        self.file_dict = dict()
-        for f in self.file_list:
-            self.file_dict[f] = \
-                sitk.Cast(sitk.ReadImage(os.path.join(self.config['base_path'],
-                                                      self.config['train_path'], f)),
-                          sitk.sitkFloat32)
-
-    def load_labels(self):
-        """
-
-        :return:
-        """
-        self.gt_dict = dict()
-        for f in self.gt_list:
-            self.gt_dict[f] = \
-                sitk.Cast(sitk.ReadImage(os.path.join(self.config['base_path'],
-                                                      self.config['train_path'], f)),
-                          sitk.sitkFloat32)
-
-    def load_train(self):
-        """
-
-        :return:
-        """
-        self.get_file_list()
-        self.get_gt_list()
-        self.load_images()
-        self.load_labels()
-
-    def getNumpyData(self, dat):
-        def _get_numpy_data(sitk_data):
-            rescaler = sitk.RescaleIntensityImageFilter()
-
-            rescaler.SetOutputMinimum(0)
-            rescaler.SetOutputMaximum(1)
-
-            rescaled_gt = rescaler.Execute(sitk_data)
-
-            new_size = [max(y[0], y[1]) for y in zip([int(x[0] * x[1] / x[2]) for x in zip(sitk_data.GetSize(), sitk_data.GetSpacing(), [1.0, 1.0, 1.5])], [128, 128, 64])]
-
-            T = sitk.AffineTransform(3)
-            T.SetMatrix(sitk_data.GetDirection())
-
-            resampler = sitk.ResampleImageFilter()
-
-            """
-                There are two behaviors that make me confuse
-                First, when i code like resampler.SetReferenceImage(...) to resampler.SetSize(...) then this work well
-                Second, but when i code like resampler.SetSize(...) to resampler.SetReferenceImage(...) then this is occurred an error:
-                        RuntimeError: ... Requested region is (at least partially) outside the largest possible region
-                Anyway, i think the error is in the settings for resampler 
-            """
-            resampler.SetReferenceImage(rescaled_gt)
-            resampler.SetSize(new_size)
-            resampler.SetOutputSpacing([1.0, 1.0, 1.5])
-            resampler.SetInterpolator(sitk.sitkLinear)
-
-            resampled_gt = resampler.Execute(rescaled_gt)
-
-            centroid = [x[0] / x[1] for x in zip(new_size, 3 * [2.0])]
-
-            start_px = [int(x[0] - x[1] / x[2]) for x in zip(centroid, [128, 128, 64], 3 * [2.0])]
-
-            region_extractor = sitk.RegionOfInterestImageFilter()
-
-            region_extractor.SetSize([128, 128, 64])
-            region_extractor.SetIndex(start_px)
-
-            cropped_gt = region_extractor.Execute(resampled_gt)
-
-            return sitk.GetArrayFromImage(cropped_gt)
-
-        ret = dict()
-        for key in dat:
-            ret[key] = _get_numpy_data(dat[key])
-        return ret
-
+        train_data_path = os.path.join(self.config['base_path'], self.config['train_path'])
+        image_files = self.read_image_files(train_data_path)
+        label_files = self.read_label_files(train_data_path)
+        return self.read_sitk_images(train_data_path, image_files), self.read_sitk_labels(train_data_path, label_files)
 
     def get_sitk_images(self):
-        return [v for v in self.file_dict.values()]
+        return self.sitk_images
 
     def get_sitk_labels(self):
-        return [v for v in self.gt_dict.values()]
+        return self.sitk_labels
 
     def get_numpy_images(self):
-        data = self.getNumpyData(self.file_dict)
-        return np.array([v for v in data.values()], dtype=np.float32)
-
+        return [sitk.GetArrayFromImage(img) for img in self.sitk_images]
 
     def get_numpy_labels(self):
-        data = self.getNumpyData(self.gt_dict)
-        return np.array([v for v in data.values()], dtype=np.float32)
+        return [sitk.GetArrayFromImage(gt) for gt in self.sitk_labels]
