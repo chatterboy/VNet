@@ -2,8 +2,10 @@ import os
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
+from multiprocessing import Pool
 
 from src.utility.dm import Batch, DataManager
+from src.utility.da import DataAugmentation
 from src.utility.loss import dice_loss
 from src.utility.layer import conv3d, deconv3d, set_bsz
 
@@ -17,36 +19,49 @@ class VNet:
 
         set_bsz(self.config['batch_size'])
 
-    """
-        Need to change images in ont-hot and it takes some times to process
-        We can do this using multi-threading to speed-up
-    """
-    def toOneHot(self, labels):
-        shape = labels.shape
-        ret = np.zeros((shape[0], shape[1], shape[2], shape[3], 2), dtype=np.float32)
-        print('start to transform labels in one-hot type...')
-        for b in range(shape[0]):
-            for d in range(shape[1]):
-                for h in range(shape[2]):
-                    for w in range(shape[3]):
-                        if labels[b, d, h, w] < 0.5:
-                            ret[b, d, h, w, 1] = 0
-                            ret[b, d, h, w, 0] = 1
+    def to_one_hot(self, numpy_labels, dtype=np.float32):
+        """
+        :param numpy_labels: list of numpy_labels, a list of numpy_labels
+        :param dtype:
+        :return: new_numpy_labels: 5-D numpy, [batch_size, depth, height, width, 2]
+        """
+        batch_size = len(numpy_labels)
+        depth, height, width = numpy_labels[0].shape
+        new_numpy_labels = np.zeros((batch_size, depth, height, width, 2), dtype=dtype)
+        for b in range(batch_size):
+            for d in range(depth):
+                for h in range(height):
+                    for w in range(width):
+                        if numpy_labels[b][d, h, w] < 0.5:
+                            new_numpy_labels[b, d, h, w, 1] = 0
+                            new_numpy_labels[b, d, h, w, 0] = 1
                         else:
-                            ret[b, d, h, w, 1] = 1
-                            ret[b, d, h, w, 0] = 0
-        return ret
+                            new_numpy_labels[b, d, h, w, 1] = 1
+                            new_numpy_labels[b, d, h, w, 0] = 0
+        return new_numpy_labels
 
-    def loadTrain(self):
-        DM = DataManager(self.config)
-        DM.load_train()
-        self.images = np.asarray(DM.get_numpy_images(),
-                                 dtype=np.float32).reshape((-1, self.depth, self.height, self.width, 1))
-        self.labels = self.toOneHot(np.asarray(DM.get_numpy_labels(), dtype=np.float32))
+    def get_batch(self, numpy_images, numpy_labels, batch_size):
+        return Batch(numpy_images, numpy_labels, batch_size=batch_size)
 
-    def getBatch(self, batch_size):
-        self.loadTrain()
-        return Batch(self.images, self.labels, batch_size=batch_size)
+    def preprocess(self):
+        dm = DataManager(self.config)
+        dm.load_train_data()
+        # All images and labels need to have rescaling and resampling before doing next augmenting
+        da = DataAugmentation()
+        self.sitk_images = da.resample_sitk_images_to_desired_size(da.rescale_sitk_images(dm.get_sitk_images()), [128, 128, 64])
+        self.sitk_labels = da.resample_sitk_images_to_desired_size(da.rescale_sitk_images(dm.get_sitk_labels()), [128, 128, 64])
+        # original images
+        self.numpy_images = dm.get_numpy_from_sitk_images(self.sitk_images)
+        self.numpy_labels = dm.get_numpy_from_sitk_images(self.sitk_labels)
+        print("apply standard histogram equalization to numpy_images and numpy_labels")
+        self.numpy_images += da.apply_hist_eqaulization_to_numpy_images(dm.get_numpy_from_sitk_images(self.sitk_images))
+        self.numpy_labels += dm.get_numpy_from_sitk_images(self.sitk_labels)
+        print("num of numpy_images: {}, num of numpy_labels: {}".format(len(self.numpy_images), len(self.numpy_labels)))
+        self.numpy_images = np.asarray(self.numpy_images, dtype=np.float32).reshape(-1, self.depth, self.height, self.width, 1)
+        self.numpy_labels = self.to_one_hot(self.numpy_labels, dtype=np.float32)
+        # 여기에 생성한 이미지들을 저장해서 결과를 확인해보자. loss가 왜 0.37 밑으로 안 떨어지는지
+        self._save_numpy_images(self.numpy_images, 'images', self.config)
+        self._save_numpy_images(self.numpy_labels, 'labels', self.config)
 
     def show(self, logits, batch_y):
         """
@@ -66,6 +81,62 @@ class VNet:
             plt.show()
         _show(logits)
         _show(batch_y)
+
+    def _save_numpy_image_type_1(self, numpy_image, name, config):
+        temp_path = os.path.join(config['base_path'], config['temp_path'])
+        depth, _, _ = numpy_image.shape
+        fig = plt.figure(figsize=(30, 30))
+        cols = 8
+        rows = depth / cols + 1
+        for i in range(depth):
+            fig.add_subplot(rows, cols, i)
+            plt.imshow(numpy_image[i], cmap='gray')
+        plt.savefig(''.join([temp_path, name, '.png']))
+        plt.close()
+
+    def _save_numpy_images_type_1(self, numpy_images, name, config):
+        for index, numpy_image in enumerate(numpy_images):
+            self._save_numpy_image_type_1(numpy_image, ''.join([str(index), '-', name]), config)
+
+    def _save_numpy_images_type_2(self, numpy_images, name, config):
+        batch_size, depth, height, width, _ = numpy_images.shape
+        numpy_images = np.reshape(numpy_images, (batch_size, depth, height, width))
+        new_numpy_images = []
+        for b in range(batch_size):
+            new_numpy_images.append(numpy_images[b, :, :, :])
+        self._save_numpy_image_type_1(new_numpy_images, name, config)
+
+    def _save_numpy_images_type_3(self, numpy_images, name, config):
+        batch_size, depth, height, width, channels = numpy_images.shape
+        self._save_numpy_images_type_2(numpy_images[:, :, :, :, 0], ''.join(['ch0', '-', name]), config)
+        self._save_numpy_images_type_2(numpy_images[:, :, :, :, 1], ''.join(['ch1', '-', name]), config)
+
+
+    def _save_numpy_images(self, numpy_images, name, config):
+        """
+            There are some types for numpy-type images in this model
+                1. a list of 3-D numpy arrays
+                2. 5-D numpy arrays, [batch_size, depth, height, width, 1]
+                3. 5-D numpy arrays, [batch_size, depth, height, width, 2]
+            1:  This is an essential type, a list consists of numpy arrays.
+                A list is corresponding to a total size of dataset such as
+                A list => [numpy array 1, numpy array 2, ...]
+            2:  This type is reshaped from the type (1). Because this type
+                of data is used to train this model. It can be train dataset
+            3:  This type is transformed from the type (1) via to_one_hot().
+                It can be ground-truth dataset.
+        :param numpy_images: list of numpy, a list of numpy_images
+        :param name:
+        :param config:
+        :return:
+        """
+        if type(numpy_images).__name__ == 'list':
+            self._save_numpy_images_type_1(numpy_images, name, config)
+        else:
+            if numpy_images.shape[-1] == 1:
+                self._save_numpy_images_type_2(numpy_images, name, config)
+            else:
+                self._save_numpy_images_type_3(numpy_images, name, config)
 
     def save(self, logits, batch_x, batch_y, config, epoch):
         def _save(name, epoch, config, npImg):
@@ -97,7 +168,8 @@ class VNet:
         _save('gt', epoch, config, batch_y)
 
     def train(self):
-        batch = self.getBatch(self.config['batch_size'])
+        self.preprocess()
+        batch = self.get_batch(self.numpy_images, self.numpy_labels, self.config['batch_size'])
         x = tf.placeholder(tf.float32, shape=[
             self.config['batch_size'],
             self.depth, self.height, self.width,
@@ -109,8 +181,9 @@ class VNet:
         #
         logits_op = self.vnet(x)
         loss_op = dice_loss(logits_op, y)
-        trainer_op = tf.train.MomentumOptimizer(learning_rate=self.config['learning_rate'],
-                                             momentum=self.config['momentum']).minimize(loss_op)
+        #trainer_op = tf.train.MomentumOptimizer(learning_rate=self.config['learning_rate'],
+                                             #momentum=self.config['momentum']).minimize(loss_op)
+        trainer_op = tf.train.AdamOptimizer(learning_rate=self.config['learning_rate']).minimize(loss_op)
         tf.add_to_collection("trainer", trainer_op)
         saver = tf.train.Saver() # logit 위에 두면 variables 없다고 에러 뜸
         bestLoss = None
@@ -382,7 +455,7 @@ class VNet:
             # TODO: score 레이어에서 마지막에 activation을 적용하는가? 우선은 적용함 (논문에서도 그래서)
             # logits
             #       return : 5-D Tensor, [batch size, 64, 128, 128, 2]
-            logits = conv3d('logits', r9, 2, 1, relu=tf.nn.relu)
+            logits = conv3d('logits', r9, 2, 1, relu=tf.nn.sigmoid)
             print('logit: {}'.format(logits.get_shape()))
 
             return logits
