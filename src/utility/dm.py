@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import SimpleITK as sitk
 
 class Batch:
@@ -11,9 +12,24 @@ class Batch:
     def _reach_to_last(self):
         return self.x.shape[0] < self.index + self.batch_size
 
+    def _shuffle(self):
+        print("Shuffling dataset")
+        new_index = [idx for idx in range(self.x.shape[0])]
+        print(new_index)
+        np.random.shuffle(new_index)
+        print(new_index)
+        new_x = np.zeros(self.x.shape)
+        new_y = np.zeros(self.y.shape)
+        for i in range(self.x.shape[0]):
+            new_x[i, :, :, :, :] = self.x[new_index[i], :, :, :, :]
+            new_y[i, :, :, :, :] = self.y[new_index[i], :, :, :, :]
+        self.x = new_x
+        self.y = new_y
+
     def next_to(self):
-        if self.reach_to_last():
+        if self._reach_to_last():
             self.index = 0
+            self._shuffle()
         batch_x = self.x[self.index:self.index + self.batch_size]
         batch_y = self.y[self.index:self.index + self.batch_size]
         self.index += self.batch_size
