@@ -1,24 +1,22 @@
 import os
-import numpy as np
 import SimpleITK as sitk
 
 class Batch:
-    def __init__(self, x, y, batch_size=1):
+    def __init__(self, x, y, batch_size):
         self.x = x
         self.y = y
         self.batch_size = batch_size
         self.index = 0
 
-    def reachToLast(self):
+    def _reach_to_last(self):
         return self.x.shape[0] < self.index + self.batch_size
 
-    def nextTo(self):
-        if self.reachToLast():
+    def next_to(self):
+        if self.reach_to_last():
             self.index = 0
-            np.random.shuffle(self.x)
-            np.random.shuffle(self.y)
-        batch_x = self.x[self.index : self.index + self.batch_size]
-        batch_y = self.y[self.index : self.index + self.batch_size]
+        batch_x = self.x[self.index:self.index + self.batch_size]
+        batch_y = self.y[self.index:self.index + self.batch_size]
+        self.index += self.batch_size
         return batch_x, batch_y
 
 class DataManager:
@@ -85,6 +83,20 @@ class DataManager:
         label_files = self._read_label_files(train_data_path)
         self._read_sitk_images(train_data_path, image_files)
         self._read_sitk_labels(train_data_path, label_files)
+
+    def get_numpy_from_sitk_image(self, sitk_image):
+        """
+        :param sitk_image: a sitk_image
+        :return: a numpy_image
+        """
+        return sitk.GetArrayFromImage(sitk_image)
+
+    def get_numpy_from_sitk_images(self, sitk_images):
+        """
+        :param sitk_images: a list of sitk_images
+        :return: a list of numpy_images
+        """
+        return [self.get_numpy_from_sitk_image(sitk_image) for sitk_image in sitk_images]
 
     def get_sitk_images(self):
         return self._sitk_images
