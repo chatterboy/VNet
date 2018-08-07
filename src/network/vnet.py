@@ -54,14 +54,14 @@ class VNet:
         self.numpy_images = dm.get_numpy_from_sitk_images(self.sitk_images)
         self.numpy_labels = dm.get_numpy_from_sitk_images(self.sitk_labels)
         print("apply standard histogram equalization to numpy_images and numpy_labels")
-        self.numpy_images += da.apply_hist_eqaulization_to_numpy_images(dm.get_numpy_from_sitk_images(self.sitk_images))
-        self.numpy_labels += dm.get_numpy_from_sitk_images(self.sitk_labels)
+        #self.numpy_images += da.apply_hist_eqaulization_to_numpy_images(dm.get_numpy_from_sitk_images(self.sitk_images))
+        #self.numpy_labels += dm.get_numpy_from_sitk_images(self.sitk_labels)
         print("num of numpy_images: {}, num of numpy_labels: {}".format(len(self.numpy_images), len(self.numpy_labels)))
         self.numpy_images = np.asarray(self.numpy_images, dtype=np.float32).reshape(-1, self.depth, self.height, self.width, 1)
         self.numpy_labels = self.to_one_hot(self.numpy_labels, dtype=np.float32)
         # 여기에 생성한 이미지들을 저장해서 결과를 확인해보자. loss가 왜 0.37 밑으로 안 떨어지는지
-        self._save_numpy_images(self.numpy_images, 'images', self.config)
-        self._save_numpy_images(self.numpy_labels, 'labels', self.config)
+        self.save_numpy_images(self.numpy_images, 'images', self.config)
+        self.save_numpy_images(self.numpy_labels, 'labels', self.config)
 
     def show(self, logits, batch_y):
         """
@@ -138,34 +138,8 @@ class VNet:
             else:
                 self._save_numpy_images_type_3(numpy_images, name, config)
 
-    def save(self, logits, batch_x, batch_y, config, epoch):
-        def _save(name, epoch, config, npImg):
-            _, depth, height, width, _ = npImg.shape
-            for i in range(2):
-                fig = plt.figure(figsize=(30, 30))
-                cols = 8
-                rows = depth / cols + 1
-                for j in range(1, depth + 1):
-                    fig.add_subplot(rows, cols, j)
-                    if name == 'gt':
-                        plt.imshow(npImg[0, j - 1, :, :, i], cmap='gray', vmin=0, vmax=1)
-                    else:
-                        plt.imshow(npImg[0, j - 1, :, :, i], cmap='gray')
-                plt.savefig(os.path.join(config['base_path'], 'result',
-                                         ''.join([s for s in [str(epoch), '-', ['bg', 'fg'][i], '-', name, '.png']])))
-        def _save_tr(name, epoch, config, npImg):
-            _, depth, height, width, _ = npImg.shape
-            fig = plt.figure(figsize=(30, 30))
-            cols = 8
-            rows = depth / cols + 1
-            for i in range(1, depth + 1):
-                fig.add_subplot(rows, cols, i)
-                plt.imshow(npImg[0, i - 1, :, :, 0], cmap='gray', vmin=0, vmax=1)
-            plt.savefig(os.path.join(config['base_path'], 'result',
-                                     ''.join([s for s in [str(epoch), '-', name, '.png']])))
-        _save_tr('tr', epoch, config, batch_x)
-        _save('img', epoch, config, logits)
-        _save('gt', epoch, config, batch_y)
+    def save_numpy_images(self, numpy_images, name, config):
+        self._save_numpy_images(numpy_images, name, config)
 
     def train(self):
         self.preprocess()
@@ -178,16 +152,12 @@ class VNet:
             self.config['batch_size'],
             self.depth, self.height, self.width,
             self.nclass], name='y')
-        #
         logits_op = self.vnet(x)
         loss_op = dice_loss(logits_op, y)
-        #trainer_op = tf.train.MomentumOptimizer(learning_rate=self.config['learning_rate'],
-                                             #momentum=self.config['momentum']).minimize(loss_op)
         trainer_op = tf.train.AdamOptimizer(learning_rate=self.config['learning_rate']).minimize(loss_op)
         tf.add_to_collection("trainer", trainer_op)
         saver = tf.train.Saver() # logit 위에 두면 variables 없다고 에러 뜸
         bestLoss = None
-        #
         with tf.Session() as sess:
             tf.global_variables_initializer().run()
             for epoch in range(1, self.config['epochs'] + 1):
@@ -208,7 +178,9 @@ class VNet:
                     logits, loss = sess.run([logits_op, loss_op],
                                             feed_dict={x: batch_x, y: batch_y})
                     print('validation: {}'.format(loss))
-                    self.save(logits, batch_x, batch_y, self.config, str(epoch))
+                    self.save_numpy_images(logits, ''.join([str(epoch), '-', 'logits']), self.config)
+                    self.save_numpy_images(batch_x, ''.join([str(epoch), '-', 'batch_x']), self.config)
+                    self.save_numpy_images(batch_y, ''.join([str(epoch), '-', 'batch_y']), self.config)
 
     def retrain(self):
         # checkpoint 경로 생성
