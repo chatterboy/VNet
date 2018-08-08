@@ -2,7 +2,6 @@ import os
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
-from multiprocessing import Pool
 
 from src.utility.dm import Batch, DataManager
 from src.utility.da import DataAugmentation
@@ -134,8 +133,8 @@ class VNet:
             self.nclass], name='y')
         logits_op = self.vnet(x)
         loss_op = dice_loss(logits_op, y)
-        trainer_op = tf.train.AdamOptimizer(learning_rate=self.config['learning_rate']).minimize(loss_op)
-        #trainer_op = tf.train.MomentumOptimizer(learning_rate=self.config['learning_rate'], momentum=self.config['momentum']).minimize(loss_op)
+        #trainer_op = tf.train.AdamOptimizer(learning_rate=self.config['learning_rate']).minimize(loss_op)
+        trainer_op = tf.train.MomentumOptimizer(learning_rate=self.config['learning_rate'], momentum=self.config['momentum']).minimize(loss_op)
         tf.add_to_collection("trainer", trainer_op)
         saver = tf.train.Saver() # logit 위에 두면 variables 없다고 에러 뜸
         bestLoss = None
@@ -406,10 +405,10 @@ class VNet:
             #       return : 5-D Tensor, [batch size, 64, 128, 128, 32]
             r9 = tf.add(up_conv8, conv9_1, 'r9')
             print('r9: {}'.format(r9.get_shape()))
-            # TODO: score 레이어에서 마지막에 activation을 적용하는가? 우선은 적용함 (논문에서도 그래서)
             # logits
             #       return : 5-D Tensor, [batch size, 64, 128, 128, 2]
-            logits = conv3d('logits', r9, 2, 1, relu=tf.nn.sigmoid)
+            logits = conv3d('logits', r9, 2, 1)
+            logits = tf.nn.softmax(logits, name='softmax')
             print('logit: {}'.format(logits.get_shape()))
 
             return logits
