@@ -1,12 +1,16 @@
 import tensorflow as tf
 
 def dice_coef(logits, labels):
-    logits = tf.reshape(logits, [-1, 2])
-    labels = tf.reshape(labels, [-1, 2])
-    numerator = 2 * tf.reduce_sum(logits * labels)
-    denominator = tf.reduce_sum(tf.square(logits) + tf.square(labels))
-    epsilon = 0.00001
-    dice_coef = numerator / (denominator + epsilon)
+    """
+    :param logits: a 5-D tensor, [batch_size, depth, height, width, 2]
+    :param labels: a 5-D tensor, [batch_size, depth, height, width, 2]
+    :return:
+    """
+    logits = tf.reshape(logits, [2, -1])
+    labels = tf.reshape(labels, [2, -1])
+    numerator = tf.multiply(tf.constant(2, dtype=tf.float32), tf.reduce_sum(tf.multiply(logits, labels), axis=-1))
+    denominator = tf.reduce_sum(tf.add(tf.square(logits), tf.square(labels)), axis=-1)
+    dice_coef = tf.reduce_mean(tf.div(numerator, tf.add(denominator, tf.constant(0.00001, dtype=tf.float32))))
     return dice_coef
 
 # https://github.com/Mazecreator/tensorflow-hints/tree/master/maximize
