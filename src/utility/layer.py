@@ -6,6 +6,16 @@ def set_bsz(bsz):
     global BATCH_SIZE
     BATCH_SIZE = bsz
 
+def _prelu(name, features, alpha=0.2):
+    with tf.variable_scope(name):
+        a = tf.get_variable('a', shape=[1], dtype=tf.float32, initializer=tf.constant_initializer(alpha))
+        return max(0, features) + a * min(0, features)
+
+def prelu(name, features, alpha=0.2):
+    with tf.variable_scope(name):
+        a = tf.get_variable('a', shape=[1], dtype=tf.float32, initializer=tf.constant_initializer(alpha))
+        return tf.nn.leaky_relu(features, a, 'prelu')
+
 def conv3d(name, input, filter, ksz, stride=1, padding='SAME', relu=None):
     with tf.variable_scope(name):
         iShape = input.get_shape().as_list()
