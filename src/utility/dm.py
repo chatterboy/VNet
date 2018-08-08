@@ -15,7 +15,6 @@ class Batch:
     def _shuffle(self):
         print("Shuffling dataset")
         new_index = [idx for idx in range(self.x.shape[0])]
-        print(new_index)
         np.random.shuffle(new_index)
         print(new_index)
         new_x = np.zeros(self.x.shape)
