@@ -2,6 +2,72 @@ import numpy as np
 import SimpleITK as sitk
 
 class DataAugmentation:
+    def _resample_sitk_image(self, sitk_image, transform, interpolator=sitk.sitkBSpline):
+        reference_image = sitk_image
+        interpolator = interpolator
+        return sitk.Resample(sitk_image, reference_image, transform, interpolator)
+
+    def translate_sitk_image(self, sitk_image, offsets):
+        """
+        :param sitk_image:
+        :param offsets: an iterable object such as a list, a tuple
+        :return:
+        """
+        transform = sitk.AffineTransform(3)
+        transform.SetTranslation(offsets)
+        return self._resample_sitk_image(sitk_image, transform)
+
+    def scale_sitk_image(self, sitk_image, scales):
+        """
+        :param sitk_image:
+        :param scales:
+        :return:
+        """
+        transform = sitk.AffineTransform(3)
+        matrix = np.asarray(transform.GetMatrix(), dtype=np.float32).reshape(3, 3)
+        for i in range(matrix.shape[0]):
+            matrix[i, i] = scales[i]
+        transform.SetMatrix(matrix.ravel().tolist())
+        return self._resample_sitk_image(sitk_image, transform)
+
+    def rotate_sitk_image(self, sitk_image, plane, degrees):
+        """
+        :param sitk_image:
+        :param plane: 0: yz-plane, 1: xz-plane, 2: xy-plane
+        :param degrees:
+        :return:
+        """
+        transform = sitk.AffineTransform(3)
+        matrix = np.asarray(transform.GetMatrix(), dtype=np.float32).reshape(3, 3)
+        radians = -np.pi * degrees / 180.0
+        if plane == 0:
+            r_matrix = np.array([[1, 0, 0],
+                                 [0, np.cos(radians), -np.sin(radians)],
+                                 [0, np.sin(radians), np.cos(radians)]])
+        elif plane == 1:
+            r_matrix = np.array([[np.cos(radians), 0, np.sin(radians)],
+                                 [0, 1, 0],
+                                 [-np.sin(radians), 0, np.cos(radians)]])
+        else:
+            r_matrix = np.array([[np.cos(radians), -np.sin(radians), 0],
+                                 [np.sin(radians), np.cos(radians), 0],
+                                 [0, 0, 1]])
+        new_matrix = np.dot(r_matrix, matrix)
+        transform.SetMatrix(new_matrix.ravel().tolist())
+        return self._resample_sitk_image(sitk_image, transform)
+
+    def shear_sitk_image(self, sitk_image, shears):
+        """
+        :param sitk_image:
+        :param shears: an iterable object such as a list or a tuple
+        :return:
+        """
+        transform = sitk.AffineTransform(3)
+        matrix = np.asarray(transform.GetMatrix(), dtype=np.float32).reshape(3, 3)
+        matrix[0, 1], matrix[0, 2], matrix[1, 0], matrix[1, 2], matrix[2, 0], matrix[2, 1] = shears
+        transform.SetMatrix(matrix.ravel().tolist())
+        return self._resample_sitk_image(sitk_image, transform)
+
     def apply_hist_equalization_to_sitk_image(self, sitk_image):
         """
 
