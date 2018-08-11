@@ -30,31 +30,106 @@ class DataAugmentation:
         transform.SetMatrix(matrix.ravel().tolist())
         return self._resample_sitk_image(sitk_image, transform)
 
-    def rotate_sitk_image(self, sitk_image, plane, degrees):
+    def _resample_sitk_image_in_rotated(self, sitk_image, transform, plane, degree, interpolator=sitk.sitkBSpline):
+        ref_image = sitk.Image(sitk_image)
+        ref_image.SetOrigin(np.asarray(self._get_rotated_origin(sitk_image, plane, degree), dtype=np.float32).tolist())
+        return sitk.Resample(sitk_image, ref_image, transform, interpolator)
+
+    def _get_rotated_origin(self, sitk_image, plane, degree):
+        sizes = np.asarray(sitk_image.GetSize(), dtype=np.float32)
+        dims = sizes.shape[0]
+        rotated_sizes = np.asarray(self._get_rotated_size(sitk_image, plane, degree), dtype=np.float32)
+        scales = sizes / rotated_sizes
+        vertices = np.zeros(((1 << dims), dims), dtype=np.float32)
+        for i in range(1 << dims):
+            vertices[i] = sizes[0] - 1 if (i & 1) == 1 else 0, \
+                          sizes[1] - 1 if ((i >> 1) & 1) == 1 else 0, \
+                          sizes[2] - 1 if ((i >> 2) & 1) == 1 else 0
+            vertices[i] *= scales
+        radians = np.pi * degree / 180.0
+        if plane == 0:
+            r_matrix = np.asarray([[1, 0, 0],
+                                   [0, np.cos(radians), -np.sin(radians)],
+                                   [0, np.sin(radians), np.cos(radians)]])
+        elif plane == 1:
+            r_matrix = np.asarray([[np.cos(radians), 0, np.sin(radians)],
+                                   [0, 1, 0],
+                                   [-np.sin(radians), 0, np.cos(radians)]])
+        else:  # Be sure that the plane have a value of 3
+            r_matrix = np.asarray([[np.cos(radians), -np.sin(radians), 0],
+                                   [np.sin(radians), np.cos(radians), 0],
+                                   [0, 0, 1]])
+        new_vertices = np.zeros(vertices.shape, dtype=np.float32)
+        for i in range(1 << dims):
+            new_vertices[i] = np.dot(r_matrix, vertices[i])
+        rotated_origin = [new_vertices[0, i] for i in range(dims)]
+        for _vertices in new_vertices:
+            for i in range(dims):
+                rotated_origin[i] = min(rotated_origin[i], _vertices[i])
+        return rotated_origin
+
+    def _get_rotated_size(self, sitk_image, plane, degree):
+        sizes = np.asarray(sitk_image.GetSize(), dtype=np.float32)
+        dims = sizes.shape[0]
+        vertices = np.zeros(((1 << dims), dims), dtype=np.float32)
+        for i in range(1 << dims):
+            vertices[i] = sizes[0] - 1 if (i & 1) == 1 else 0, \
+                          sizes[1] - 1 if ((i >> 1) & 1) == 1 else 0, \
+                          sizes[2] - 1 if ((i >> 2) & 1) == 1 else 0
+        radians = np.pi * degree / 180.0
+        if plane == 0:
+            r_matrix = np.asarray([[1, 0, 0],
+                                   [0, np.cos(radians), -np.sin(radians)],
+                                   [0, np.sin(radians), np.cos(radians)]])
+        elif plane == 1:
+            r_matrix = np.asarray([[np.cos(radians), 0, np.sin(radians)],
+                                   [0, 1, 0],
+                                   [-np.sin(radians), 0, np.cos(radians)]])
+        else:  # Be sure that the plane have a value of 3
+            r_matrix = np.asarray([[np.cos(radians), -np.sin(radians), 0],
+                                   [np.sin(radians), np.cos(radians), 0],
+                                   [0, 0, 1]])
+        new_vertices = np.zeros(vertices.shape, dtype=np.float32)
+        for i in range(1 << dims):
+            new_vertices[i] = np.dot(r_matrix, vertices[i])
+        l_most = [new_vertices[0, i] for i in range(dims)]
+        r_most = [new_vertices[0, i] for i in range(dims)]
+        for _vertices in new_vertices:
+            for i in range(dims):
+                l_most[i] = min(l_most[i], _vertices[i])
+                r_most[i] = max(r_most[i], _vertices[i])
+        return [r_most[i] - l_most[i] + 1 for i in range(dims)]
+
+    def _rotate_sitk_image(self, sitk_image, plane, degree):
         """
         :param sitk_image:
         :param plane: 0: yz-plane, 1: xz-plane, 2: xy-plane
-        :param degrees:
+        :param degree:
         :return:
         """
         transform = sitk.AffineTransform(3)
+        sizes = np.asarray(sitk_image.GetSize(), dtype=np.float32)
+        rotated_sizes = np.asarray(self._get_rotated_size(sitk_image, plane, degree), dtype=np.float32)
+        scales = rotated_sizes / sizes
         matrix = np.asarray(transform.GetMatrix(), dtype=np.float32).reshape(3, 3)
-        radians = -np.pi * degrees / 180.0
+        for i in range(matrix.shape[0]):
+            matrix[i, i] *= scales[i]
+        radians = -np.pi * degree / 180.0
         if plane == 0:
-            r_matrix = np.array([[1, 0, 0],
-                                 [0, np.cos(radians), -np.sin(radians)],
-                                 [0, np.sin(radians), np.cos(radians)]])
+            r_matrix = np.asarray([[1, 0, 0],
+                                   [0, np.cos(radians), -np.sin(radians)],
+                                   [0, np.sin(radians), np.cos(radians)]])
         elif plane == 1:
-            r_matrix = np.array([[np.cos(radians), 0, np.sin(radians)],
-                                 [0, 1, 0],
-                                 [-np.sin(radians), 0, np.cos(radians)]])
-        else:
-            r_matrix = np.array([[np.cos(radians), -np.sin(radians), 0],
-                                 [np.sin(radians), np.cos(radians), 0],
-                                 [0, 0, 1]])
+            r_matrix = np.asarray([[np.cos(radians), 0, np.sin(radians)],
+                                   [0, 1, 0],
+                                   [-np.sin(radians), 0, np.cos(radians)]])
+        else:  # Be sure that the plane have a value of 3
+            r_matrix = np.asarray([[np.cos(radians), -np.sin(radians), 0],
+                                   [np.sin(radians), np.cos(radians), 0],
+                                   [0, 0, 1]])
         new_matrix = np.dot(r_matrix, matrix)
         transform.SetMatrix(new_matrix.ravel().tolist())
-        return self._resample_sitk_image(sitk_image, transform)
+        return self._resample_sitk_image_in_rotated(sitk_image, transform, plane, degree)
 
     def shear_sitk_image(self, sitk_image, shears):
         """
@@ -159,3 +234,21 @@ class DataAugmentation:
         :return: list of sitk_images
         """
         return [self.resample_sitk_image_to_desired_size(img, output_size) for img in sitk_images]
+
+    def rotate_sitk_image(self, sitk_image, plane, degree):
+        """
+        :param sitk_image:
+        :param plane:
+        :param degree:
+        :return:
+        """
+        return self._rotate_sitk_image(sitk_image, plane, degree)
+
+    def rotate_sitk_images(self, sitk_images, plane, degree):
+        """
+        :param sitk_images:
+        :param plane:
+        :param degree:
+        :return:
+        """
+        return [self.rotate_sitk_image(sitk_image, plane, degree) for sitk_image in sitk_images]
