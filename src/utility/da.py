@@ -7,14 +7,14 @@ class DataAugmentation:
         interpolator = interpolator
         return sitk.Resample(sitk_image, reference_image, transform, interpolator)
 
-    def translate_sitk_image(self, sitk_image, offsets):
+    def _translate_sitk_image(self, sitk_image, offsets):
         """
         :param sitk_image:
         :param offsets: an iterable object such as a list, a tuple
         :return:
         """
         transform = sitk.AffineTransform(3)
-        transform.SetTranslation(offsets)
+        transform.SetTranslation([-x for x in offsets])
         return self._resample_sitk_image(sitk_image, transform)
 
     def scale_sitk_image(self, sitk_image, scales):
@@ -252,3 +252,19 @@ class DataAugmentation:
         :return:
         """
         return [self.rotate_sitk_image(sitk_image, plane, degree) for sitk_image in sitk_images]
+
+    def translate_sitk_image(self, sitk_image, offsets):
+        """
+        :param sitk_image:
+        :param offsets:
+        :return:
+        """
+        return self._translate_sitk_image(sitk_image, offsets)
+
+    def translate_sitk_images(self, sitk_images, offsets):
+        """
+        :param sitk_images:
+        :param offsets:
+        :return:
+        """
+        return [self.translate_sitk_image(sitk_image, offsets) for sitk_image in sitk_images]
